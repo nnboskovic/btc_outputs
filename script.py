@@ -1,8 +1,8 @@
-import csv
 import binascii
 import decimal
 import os
 from collections import defaultdict
+from decimal import Decimal
 
 import base58
 from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def connect_to_node(rpc_user, rpc_password, rpc_host, rpc_port):
+def connect_to_node():
     rpc_user = os.getenv('RPC_USER')
     rpc_password = os.getenv('RPC_PASSWORD')
     rpc_host = os.getenv('RPC_HOST', '127.0.0.1')
@@ -103,7 +103,11 @@ def batch_getrawtransaction(rpc_connection, txids):
         return []
 
 
-def analyze_block(rpc_connection, block_hash, output_file):
+def btc_to_satoshis(btc_value):
+    return int(Decimal(str(btc_value)) * Decimal('100000000'))
+
+
+def analyze_block(rpc_connection, block_hash, output_file, target_address=None):
     transactions = get_block_transactions(rpc_connection, block_hash)
 
     # Collect all input txids
@@ -126,7 +130,13 @@ def analyze_block(rpc_connection, block_hash, output_file):
     ws2 = wb.create_sheet(title="Transaction Hashes")
     ws2.append(['Transaction Hash'])
 
-    address_stats = defaultdict(lambda: {'balance_in': 0, 'balance_out': 0, 'tx_count': 0})
+    address_stats = defaultdict(lambda: {'balance_in': Decimal('0'), 'balance_out': Decimal('0'), 'tx_count': 0})
+
+    # Use a set to store unique transaction inputs and outputs
+    unique_txs = set()
+
+    # Create a list to store transactions involving the target address
+    target_address_txs = []
 
     for tx in transactions:
         ws2.append([tx['txid']])
@@ -135,63 +145,115 @@ def analyze_block(rpc_connection, block_hash, output_file):
             if 'coinbase' in vin:
                 # Handle coinbase transaction
                 for vout_index, vout in enumerate(tx['vout']):
-                    amount_satoshis = int(vout['value'] * decimal.Decimal(1e8))
+                    amount_satoshis = btc_to_satoshis(vout['value'])
                     output_address = derive_address(vout['scriptPubKey'], vout['scriptPubKey'].get('asm', ''))
 
-                    ws1.append([
-                        'Coinbase',
-                        vin_index,
-                        tx['txid'],
-                        vout_index,
-                        'Coinbase (Newly generated coins)',
-                        output_address,
-                        amount_satoshis
-                    ])
+                    unique_key = ('Coinbase', vin_index, tx['txid'], vout_index)
+                    if unique_key not in unique_txs:
+                        unique_txs.add(unique_key)
+                        ws1.append([
+                            'Coinbase',
+                            vin_index,
+                            tx['txid'],
+                            vout_index,
+                            'Coinbase (Newly generated coins)',
+                            output_address,
+                            amount_satoshis
+                        ])
 
-                    address_stats[output_address]['balance_in'] += amount_satoshis
+                    address_stats[output_address]['balance_in'] += Decimal(amount_satoshis)
                     address_stats[output_address]['tx_count'] += 1
 
+                    if output_address == target_address:
+                        target_address_txs.append({
+                            'type': 'output',
+                            'txid': tx['txid'],
+                            'vout_index': vout_index,
+                            'amount': amount_satoshis,
+                            'address': output_address
+                        })
+
+
             elif 'txid' in vin:
+
                 input_tx = input_tx_dict.get(vin['txid'])
                 if input_tx:
                     input_vout = input_tx['vout'][vin['vout']]
                     input_address = derive_address(input_vout['scriptPubKey'],
                                                    input_vout['scriptPubKey'].get('asm', ''))
-                    input_amount = int(input_vout['value'] * 1e8)
+                    input_amount = btc_to_satoshis(input_vout['value'])
 
-                    address_stats[input_address]['balance_out'] += input_amount
-                    address_stats[input_address]['tx_count'] += 1
+                    # Only update stats for unique inputs
+                    unique_input_key = (vin['txid'], vin['vout'])
+
+                    if unique_input_key not in unique_txs:
+                        unique_txs.add(unique_input_key)
+                        address_stats[input_address]['balance_out'] += Decimal(input_amount)
+                        address_stats[input_address]['tx_count'] += 1
+                        if input_address == target_address:
+                            target_address_txs.append({
+                                'type': 'input',
+                                'txid': tx['txid'],
+                                'vin_index': vin_index,
+                                'amount': input_amount,
+                                'address': input_address
+                            })
 
                     for vout_index, vout in enumerate(tx['vout']):
-                        amount_satoshis = int(vout['value'] * 1e8)
+                        amount_satoshis = btc_to_satoshis(vout['value'])
                         output_address = derive_address(vout['scriptPubKey'], vout['scriptPubKey'].get('asm', ''))
+                        unique_key = (tx['txid'], vout_index)
 
-                        ws1.append([
-                            vin['txid'],
-                            vin['vout'],
-                            tx['txid'],
-                            vout_index,
-                            input_address,
-                            output_address,
-                            amount_satoshis
-                        ])
+                        if unique_key not in unique_txs:
+                            unique_txs.add(unique_key)
+                            ws1.append([
+                                vin['txid'],
+                                vin['vout'],
+                                tx['txid'],
+                                vout_index,
+                                input_address,
+                                output_address,
+                                amount_satoshis
+                            ])
 
-                        address_stats[output_address]['balance_in'] += amount_satoshis
-                        address_stats[output_address]['tx_count'] += 1
+                            # Only update stats for unique outputs
 
+                            address_stats[output_address]['balance_in'] += Decimal(amount_satoshis)
+                            address_stats[output_address]['tx_count'] += 1
+
+                            if output_address == target_address:
+                                target_address_txs.append({
+                                    'type': 'output',
+                                    'txid': tx['txid'],
+                                    'vout_index': vout_index,
+                                    'amount': amount_satoshis,
+                                    'address': output_address
+                                })
                 else:
                     print(f"Warning: Input transaction {vin['txid']} not found")
 
     ws3 = wb.create_sheet(title="Address Statistics")
-    ws3.append(['Address', 'Balance In', 'Balance Out', 'Number of Transactions'])
+    ws3.append(['Address', 'Balance In (satoshis)', 'Balance Out (satoshis)', 'Number of Transactions'])
 
     for address, stats in address_stats.items():
         ws3.append([
             address,
-            stats['balance_in'],
-            stats['balance_out'],
+            int(stats['balance_in']),
+            int(stats['balance_out']),
             stats['tx_count']
         ])
+
+    if target_address:
+        ws4 = wb.create_sheet(title=f"Transactions for {target_address}")
+        ws4.append(['Type', 'Transaction Hash', 'Index', 'Amount (satoshis)', 'Address'])
+        for tx in target_address_txs:
+            ws4.append([
+                tx['type'],
+                tx['txid'],
+                tx.get('vin_index', tx.get('vout_index')),
+                tx['amount'],
+                tx['address']
+            ])
 
     wb.save(output_file)
     print(f"Excel file '{output_file}' has been created with the transaction details and statistics.")
@@ -202,8 +264,9 @@ def main():
     rpc_connection = connect_to_node()
 
     output_file = "block_transactions.xlsx"
+    target_address = os.getenv('TARGET_ADDRESS')  # Add this to your .env file if you want to analyze a specific address
 
-    analyze_block(rpc_connection, os.getenv('BLOCK_HASH', ''), output_file)
+    analyze_block(rpc_connection, os.getenv('BLOCK_HASH', ''), output_file, target_address)
 
 
 if __name__ == "__main__":
