@@ -1,4 +1,6 @@
 /venv
-*.csv
+*.csv*
+*.xlsx*
+*.json
 .env
 /.idea
