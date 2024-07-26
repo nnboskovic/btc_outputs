@@ -15,8 +15,11 @@ load_dotenv()
 
 
 def analyze_block(rpc_connection, block_hash, output_file, target_address=None):
+    print(f"Analyzing block {block_hash} - fetching transactions...")
     transactions = get_block_transactions(rpc_connection, block_hash)
+    print(f"Transactions fetched successfully - {len(transactions)} transactions in block")
     input_tx_dict = get_input_transactions(rpc_connection, transactions)
+    print(f"Input transactions fetched successfully - {len(input_tx_dict)} inputs related to this block")
 
     wb = Workbook()
     address_stats = defaultdict(lambda: {'balance_in': Decimal('0'), 'balance_out': Decimal('0'), 'tx_count': 0})

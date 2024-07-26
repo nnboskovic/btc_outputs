@@ -1,8 +1,8 @@
 from decimal import Decimal
 
 from fetchers import batch_getrawtransaction
-from script import btc_to_satoshis, derive_address, process_transaction_input, process_transaction_outputs
-
+from script import derive_address
+from utils import btc_to_satoshis
 
 def get_input_transactions(rpc_connection, transactions):
     input_txids = [vin['txid'] for tx in transactions for vin in tx['vin'] if 'txid' in vin]
