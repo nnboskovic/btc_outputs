@@ -1,0 +1,5 @@
+openpyxl
+python-bitcoinrpc
+pycryptodome
+base58
+python-dotenv
