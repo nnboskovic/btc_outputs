@@ -24,12 +24,12 @@ def create_transaction_hashes_sheet(wb, transactions):
 
 def create_address_statistics_sheet(wb, address_stats):
     ws3 = wb.create_sheet(title="Address Statistics")
-    ws3.append(['Address', 'Balance In (satoshis)', 'Balance Out (satoshis)', 'Number of Transactions'])
+    ws3.append(['Address', 'VIN Volume (satoshis)', 'VOUT Volume (satoshis)', 'Number of Transactions'])
     for address, stats in address_stats.items():
         ws3.append([
             address,
-            int(stats['balance_in']),
             int(stats['balance_out']),
+            int(stats['balance_in']),
             stats['tx_count']
         ])
 
