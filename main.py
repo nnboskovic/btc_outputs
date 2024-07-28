@@ -37,8 +37,8 @@ def analyze_block(rpc_connection, block_hash, output_file, target_address=None):
 def main():
     # Replace these with your actual RPC credentials and node information
     rpc_connection = connect_to_node()
-
-    output_file = "block_transactions.xlsx"
+    block_hash = os.getenv('BLOCK_HASH', '')
+    output_file = f"block_transactions_{block_hash}.xlsx"
     target_address = os.getenv('TARGET_ADDRESS')  # Add this to your .env file if you want to analyze a specific address
 
     analyze_block(rpc_connection, os.getenv('BLOCK_HASH', ''), output_file, target_address)

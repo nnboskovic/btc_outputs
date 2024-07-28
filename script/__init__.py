@@ -75,6 +75,13 @@ def derive_address(script_pub_key: dict, script_pub_key_asm: str) -> str:
     hex_script = script_pub_key.get("hex", "")
 
     try:
+        if script_type == "nulldata":
+            # Handle OP_RETURN (nulldata) scripts
+            asm_parts = script_pub_key_asm.split()
+            if asm_parts[0] == "OP_RETURN":
+                data = " ".join(asm_parts[1:])
+                return f"OP_RETURN_{data[:20]}..."  # Return first 20 chars of data
+
         if script_type == "pubkey":
             pubkey = script_pub_key_asm.split()[0]
             return pubkey_to_address(pubkey)
@@ -96,7 +103,7 @@ def derive_address(script_pub_key: dict, script_pub_key_asm: str) -> str:
 
         # Handle "cosmic ray" transactions with long, repeating OP_CHECKSIG
         if script_pub_key_asm.count("OP_CHECKSIG") > 100:
-            return f"UNKNOWN_{script_pub_key_asm[:20]}..."
+            return f"UNKNOWN_{script_pub_key_asm[:30]}"
 
         # fallback
         if "OP_CHECKSIG" in script_pub_key_asm:
@@ -119,4 +126,4 @@ def derive_address(script_pub_key: dict, script_pub_key_asm: str) -> str:
         print(f"Script type: {script_type}")
         print(f"Script pub key: {script_pub_key}")
         print(f"Script pub key ASM: {script_pub_key_asm[:100]}...")  # Print only the first 100 characters
-        return f"UNKNOWN_{script_type}"
+        return f"UNKNOWN_{script_pub_key_asm[:30]}"
